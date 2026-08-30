@@ -30,14 +30,6 @@ body{background:#000;color:#fff;font-family:-apple-system,'Segoe UI',Roboto,sans
 #error h2{color:#f87171;font-size:1.15rem}
 #error p{color:rgba(255,255,255,.45);font-size:.85rem;line-height:1.6;max-width:340px}
 #error .btn{padding:10px 28px;background:#f0c040;color:#0a0a0a;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;text-decoration:none;margin-top:2px}
-
-/* The camera video — this is the real environment background */
-#camera-video{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:1}
-/* AR overlay scene — rendered on top of camera */
-#ar-scene{position:fixed;inset:0;width:100vw;height:100vh;z-index:2;pointer-events:none}
-/* UI overlays */
-#ui-layer{position:fixed;inset:0;z-index:50;pointer-events:none}
-#ui-layer *{pointer-events:auto}
 </style>
 </head>
 <body>
@@ -65,11 +57,11 @@ body{background:#000;color:#fff;font-family:-apple-system,'Segoe UI',Roboto,sans
 <a class="btn" id="btn-watch" href="#">Watch Video</a>
 </div>
 
-<!-- AR.js scene — camera feed is the background -->
+<!-- AR.js scene — sourceType webcam auto-starts camera when scene loads -->
 <a-scene id="ar-scene"
   embedded
   vr-mode-ui="enabled: false"
-  arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;
+  arjs="sourceType: webcam; debugUIEnabled: false;
         width: 1280; height: 960;
         backgroundImage: none;"
   renderer="antialias: true; alpha: true; logarithmicDepthBuffer: true; colorManagement: true">
@@ -94,6 +86,9 @@ body{background:#000;color:#fff;font-family:-apple-system,'Segoe UI',Roboto,sans
 
 </a-scene>
 
+<script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+<script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+
 <script>
 (function(){
 'use strict';
@@ -104,6 +99,7 @@ const status = $('#status');
 const bottomBar = $('#bottom-bar');
 const error = $('#error');
 const video = $('#overlay-video');
+const scene = $('#ar-scene');
 
 let playing = true;
 
@@ -112,14 +108,13 @@ function setStatus(t, color){
   status.style.color = color || 'rgba(255,255,255,.5)';
   status.classList.remove('hidden');
 }
-function hideAll(){
+function hideUI(){
   loading.classList.add('hidden');
-  status.classList.add('hidden');
-  bottomBar.classList.add('hidden');
+  bottomBar.classList.remove('hidden');
   error.classList.remove('visible');
 }
 function showError(title, text){
-  hideAll();
+  hideUI();
   $('#err-title').textContent = title;
   $('#err-text').textContent = text;
   error.classList.add('visible');
@@ -127,8 +122,8 @@ function showError(title, text){
 
 // Controls
 $('#btn-pause').onclick = () => {
-  if(playing){ video.pause(); playing=false; $('#btn-pause').innerHTML='▶'; }
-  else { video.play(); playing=true; $('#btn-pause').innerHTML='⏸'; }
+  if(playing){ video.pause(); playing=false; $('#btn-pause').innerHTML='\u25B6'; }
+  else { video.play(); playing=true; $('#btn-pause').innerHTML='\u23F8'; }
 };
 $('#btn-fs').onclick = () => {
   if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
@@ -143,14 +138,44 @@ $('#btn-watch').onclick = () => {
   v.onended = () => v.remove();
 };
 
-// AR.js events
-const scene = $('#ar-scene');
+// ── AR.js camera initialization ──
+// AR.js with sourceType: webcam auto-starts camera when the scene loads.
+// We just wait for the scene.loaded event and verify the camera video exists.
 
+let initAttempts = 0;
+function waitForCamera(){
+  if(initAttempts++ > 60){
+    showError('Camera Init Failed', 'Could not start the camera. Make sure you are on HTTPS and have camera permissions.');
+    return;
+  }
+
+  // AR.js creates a <video> element for the camera when sourceType is 'webcam'
+  // Check if AR.js has created the camera video element
+  const arVideo = document.querySelector('#arjs-video');
+  if(arVideo && arVideo.readyState >= 2){
+    // Camera is ready (readyState 2 = HAVE_CURRENT_DATA)
+    hideUI();
+    setStatus('SCANNING FOR MARKER...');
+    return;
+  }
+
+  // Also check if a video element was created
+  const videos = document.querySelectorAll('video');
+  for(let v of videos){
+    if(v.readyState >= 2){
+      hideUI();
+      setStatus('SCANNING FOR MARKER...');
+      return;
+    }
+  }
+
+  setTimeout(waitForCamera, 500);
+}
+
+// AR.js events
 scene.addEventListener('markerFound', (e) => {
   if(e.detail.id === 'hiro' || e.detail.marker === 'hiro'){
     setStatus('VIDEO PLAYING', '#4ade80');
-    bottomBar.classList.remove('hidden');
-    loading.classList.add('hidden');
   }
 });
 
@@ -158,26 +183,14 @@ scene.addEventListener('markerLost', (e) => {
   setStatus('POINT AT MARKER');
 });
 
-// Wait for AR.js to initialize
-let initAttempts = 0;
-function waitForAR(){
-  if(initAttempts++ > 30){
-    showError('AR Init Failed', 'Could not start AR. Check camera permissions.');
-    return;
-  }
-  // AR.js camera element is created dynamically
-  const cam = document.querySelector('[camera]') || document.querySelector('a-camera');
-  if(cam && cam.camera){
-    // Camera is ready — AR.js is showing the live camera feed as background
-    setStatus('SCANNING FOR MARKER...');
-    loading.classList.add('hidden');
-    bottomBar.classList.remove('hidden');
-    return;
-  }
-  setTimeout(waitForAR, 300);
-}
-
-waitForAR();
+// Wait for scene to load, then check for camera
+scene.addEventListener('loaded', () => {
+  setStatus('STARTING CAMERA...');
+  loading.classList.remove('hidden');
+  // AR.js should auto-start the camera when sourceType is 'webcam'
+  // Give it a moment to initialize
+  setTimeout(waitForCamera, 1000);
+});
 })();
 </script>
 </body>
