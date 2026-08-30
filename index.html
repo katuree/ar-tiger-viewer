@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Tiger — Art Comes Alive</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#fff;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;overflow:hidden;touch-action:none;-webkit-tap-highlight-color:transparent}
+#loading{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:linear-gradient(160deg,#0a0a0a,#1a1020,#0a0a0a)}
+#loading.hidden{display:none}
+.title{font-family:Georgia,serif;font-size:1.5rem;color:#f0c040;letter-spacing:.08em;text-align:center}
+.hint{font-size:.85rem;color:rgba(255,255,255,.4);text-align:center;max-width:300px;line-height:1.5}
+.spinner{width:36px;height:36px;border:2px solid rgba(240,192,64,.15);border-top-color:#f0c040;border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#bottom-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:50;display:flex;gap:16px}
+#bottom-bar.hidden{display:none}
+.ctrl{width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.1);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;font-size:1.15rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s,transform .15s}
+.ctrl:hover{background:rgba(255,255,255,.18)}.ctrl:active{transform:scale(.92)}
+#status{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:50;padding:6px 14px;background:rgba(0,0,0,.5);backdrop-filter:blur(8px);border-radius:16px;font-size:.7rem;color:rgba(255,255,255,.5);text-align:center;letter-spacing:.08em;text-transform:uppercase;pointer-events:none;white-space:nowrap}
+#status.hidden{display:none}
+#error{position:fixed;inset:0;z-index:200;background:#0a0a0a;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:32px;text-align:center}
+#error.visible{display:flex}
+#error h2{color:#f87171;font-size:1.15rem}
+#error p{color:rgba(255,255,255,.45);font-size:.85rem;line-height:1.6;max-width:340px}
+#error .btn{padding:10px 28px;background:#f0c040;color:#0a0a0a;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;text-decoration:none;margin-top:2px}
+</style>
+</head>
+<body>
+<div id="loading">
+<div class="title">Art Comes Alive</div>
+<div class="hint">Point your camera at the artwork<br>to see the tiger come alive</div>
+<div class="spinner"></div>
+</div>
+<div id="status" class="hidden"></div>
+<div id="bottom-bar" class="hidden">
+<button class="ctrl" id="btn-pause" title="Play/Pause">&#9654;</button>
+<button class="ctrl" id="btn-fs" title="Fullscreen">&#10066;</button>
+</div>
+<div id="error">
+<h2 id="err-title">AR Not Available</h2>
+<p id="err-text">Your browser doesn't support AR.</p>
+<a class="btn" id="btn-watch" href="#">Watch Video</a>
+</div>
+
+<script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+<script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+
+<script>
+(function(){
+'use strict';
+
+// ── Scene setup ──
+const scene = document.createElement('a-scene');
+scene.setAttribute('embedded', '');
+scene.setAttribute('vr-mode-ui', 'enabled: false');
+scene.setAttribute('renderer', 'logarithmicDepthBuffer: true; colorManagement: true');
+scene.style.cssText = 'width:100%;height:100%;position:fixed;inset:0;z-index:1';
+
+// Camera
+const camera = document.createElement('a-camera');
+camera.setAttribute('cursor', 'rayOrigin: mouse');
+scene.appendChild(camera);
+
+// Marker-based video overlay
+const videoEl = document.createElement('a-video');
+videoEl.setAttribute('src', 'assets/video.mp4');
+videoEl.setAttribute('position', '0 0 -2');
+videoEl.setAttribute('width', '1.6');
+videoEl.setAttribute('height', '2.26');
+videoEl.setAttribute('loop', '');
+videoEl.setAttribute('autoplay', '');
+videoEl.setAttribute('muted', '');
+videoEl.setAttribute('opacity', '1');
+
+// The marker entity
+const marker = document.createElement('a-entity');
+marker.setAttribute('hiro-marker', '');
+marker.appendChild(videoEl);
+scene.appendChild(marker);
+
+document.body.appendChild(scene);
+
+// ── UI ──
+const $ = s => document.querySelector(s);
+const loading = $('#loading');
+const status = $('#status');
+const bottomBar = $('#bottom-bar');
+const error = $('#error');
+
+let playing = true;
+
+function setStatus(t){ status.textContent = t; status.classList.remove('hidden'); }
+function hideAll(){ loading.classList.add('hidden'); status.classList.add('hidden'); bottomBar.classList.add('hidden'); error.classList.remove('visible'); }
+
+function showError(title, text){
+  hideAll();
+  $('#err-title').textContent = title;
+  $('#err-text').textContent = text;
+  error.classList.add('visible');
+}
+
+// Controls
+$('#btn-pause').onclick = () => {
+  if(playing){ videoEl.pause(); playing=false; $('#btn-pause').innerHTML='▶'; }
+  else { videoEl.play(); playing=true; $('#btn-pause').innerHTML='⏸'; }
+};
+$('#btn-fs').onclick = () => {
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
+};
+$('#btn-watch').onclick = () => {
+  error.classList.remove('visible');
+  const v = document.createElement('video');
+  v.src = 'assets/video.mp4'; v.controls = true; v.autoplay = true;
+  v.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#000;z-index:200';
+  document.body.appendChild(v);
+  v.onended = () => v.remove();
+};
+
+// ── AR init ──
+let started = false;
+
+// Track events from AR.js
+scene.addEventListener('markerFound', (e) => {
+  if(e.detail.id === 'hiro' || e.detail.marker === 'hiro'){
+    setStatus('VIDEO PLAYING', '#4ade80');
+    bottomBar.classList.remove('hidden');
+    if(started){ loading.classList.add('hidden'); started = false; }
+  }
+});
+
+scene.addEventListener('markerLost', (e) => {
+  setStatus('POINT AT MARKER');
+  if(status.style.color) status.style.color = '';
+});
+
+// Detect AR.js readiness
+let initAttempts = 0;
+function tryInit(){
+  if(started) return;
+  initAttempts++;
+  
+  // Check if camera permission was granted
+  navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+    stream.getTracks().forEach(t => t.stop());
+    setStatus('SCANNING...');
+    started = true;
+    loading.classList.add('hidden');
+    bottomBar.classList.remove('hidden');
+  }).catch(e => {
+    if(initAttempts < 10){ setTimeout(tryInit, 500); return; }
+    showError('Camera Denied', 'AR needs camera access. Watch the video instead.');
+  });
+}
+
+tryInit();
+})();
+</script>
+</body>
+</html>
