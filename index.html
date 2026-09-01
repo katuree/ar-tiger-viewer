@@ -17,6 +17,9 @@ body{background:#000;color:#fff;font-family:-apple-system,'Segoe UI',Roboto,sans
 .spinner{width:36px;height:36px;border:2px solid rgba(240,192,64,.15);border-top-color:#f0c040;border-radius:50%;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+#start-btn{padding:16px 40px;background:#f0c040;color:#0a0a0a;border:none;border-radius:12px;font-size:1.1rem;font-weight:600;cursor:pointer;letter-spacing:.04em;box-shadow:0 4px 20px rgba(240,192,64,.3)}
+#start-btn:active{transform:scale(.95)}
+
 #bottom-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100;display:flex;gap:16px}
 #bottom-bar.hidden{display:none}
 .ctrl{width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.1);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;font-size:1.15rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s,transform .15s}
@@ -25,24 +28,24 @@ body{background:#000;color:#fff;font-family:-apple-system,'Segoe UI',Roboto,sans
 #status{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:100;padding:6px 14px;background:rgba(0,0,0,.5);backdrop-filter:blur(8px);border-radius:16px;font-size:.7rem;color:rgba(255,255,255,.5);text-align:center;letter-spacing:.08em;text-transform:uppercase;pointer-events:none;white-space:nowrap}
 #status.hidden{display:none}
 
+#debug{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:101;padding:4px 12px;background:rgba(0,0,0,.7);border-radius:12px;font-size:.65rem;color:#f0c040;font-family:monospace;pointer-events:none;white-space:nowrap}
+#debug.hidden{display:none}
+
 #error{position:fixed;inset:0;z-index:300;background:#000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:32px;text-align:center}
 #error.visible{display:flex}
 #error h2{color:#f87171;font-size:1.15rem}
 #error p{color:rgba(255,255,255,.45);font-size:.85rem;line-height:1.6;max-width:340px}
 #error .btn{padding:10px 28px;background:#f0c040;color:#0a0a0a;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;text-decoration:none;margin-top:2px}
-
-/* Debug overlay */
-#debug{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:101;padding:4px 12px;background:rgba(0,0,0,.7);border-radius:12px;font-size:.65rem;color:#f0c040;font-family:monospace;pointer-events:none;white-space:nowrap}
-#debug.hidden{display:none}
 </style>
 </head>
 <body>
 
-<!-- Loading screen -->
+<!-- Loading screen with tap-to-start -->
 <div id="loading">
-<div class="title">Art Comes Alive</div>
-<div class="hint">Point your camera at the artwork<br>to see the tiger come alive</div>
-<div class="spinner"></div>
+  <div class="title">Art Comes Alive</div>
+  <div class="hint" id="loading-hint">Point your camera at the artwork<br>to see the tiger come alive</div>
+  <button id="start-btn">&#128247;&nbsp; Start Camera</button>
+  <div class="spinner" id="spinner" style="display:none"></div>
 </div>
 
 <!-- Status -->
@@ -62,11 +65,11 @@ body{background:#000;color:#fff;font-family:-apple-system,'Segoe UI',Roboto,sans
 <a class="btn" id="btn-watch" href="#">Watch Video</a>
 </div>
 
-<!-- AR.js scene -->
+<!-- AR.js scene (no sourceType — camera starts via getUserMedia on tap) -->
 <a-scene id="ar-scene"
   embedded
   vr-mode-ui="enabled: false"
-  arjs="sourceType: webcam; debugUIEnabled: false;
+  arjs="debugUIEnabled: false;
         width: 1280; height: 960;
         backgroundImage: none;"
   renderer="antialias: true; alpha: true; logarithmicDepthBuffer: true; colorManagement: true">
@@ -113,8 +116,12 @@ const bottomBar = $('#bottom-bar');
 const error = $('#error');
 const video = $('#overlay-video');
 const scene = $('#ar-scene');
+const startBtn = $('#start-btn');
+const spinner = $('#spinner');
+const loadingHint = $('#loading-hint');
 
 let playing = true;
+let cameraStarted = false;
 
 function setStatus(t, color){
   status.textContent = t;
@@ -162,37 +169,99 @@ $('#btn-watch').onclick = () => {
 // Wait for libraries to be available (polling for reliability)
 function waitForLibraries(){
   if(typeof AFRAME === 'undefined'){
-    // Libraries still loading — retry
     setTimeout(waitForLibraries, 200);
     return;
   }
   if(typeof AFRAME.components === 'undefined' || typeof AFRAME.components['hiro-marker'] === 'undefined'){
-    // AR.js not ready yet — retry
     setTimeout(waitForLibraries, 200);
     return;
   }
-  // All libraries ready
+  // All libraries ready — show tap-to-start
   console.log('[AR Tiger] A-Frame', AFRAME.version, '| AR.js hiro-marker ready');
-  initAR();
+  showStartButton();
+}
+setTimeout(waitForLibraries, 50);
 
-  // ── Camera initialization ──
+function showStartButton(){
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isAndroid = /Android/.test(navigator.userAgent);
+  
+  loadingHint.innerHTML = 'Tap to start camera<br>then point at the artwork frame';
+  startBtn.style.display = 'block';
+  spinner.style.display = 'none';
+  
+  startBtn.onclick = startCamera;
+}
+
+function startCamera(){
+  // Hide button, show spinner
+  startBtn.style.display = 'none';
+  spinner.style.display = 'block';
+  loadingHint.innerHTML = 'Starting camera...<br>Please allow camera access';
+
+  // Show loading screen
+  loading.classList.remove('hidden');
+
+  // Explicit getUserMedia — required for iOS Safari
+  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 960 }
+      },
+      audio: false
+    }).then(function(stream){
+      console.log('[AR Tiger] Camera stream acquired');
+      cameraStarted = true;
+      
+      // Attach stream to the scene's video element
+      const arVideo = document.querySelector('#arjs-video');
+      if(arVideo){
+        arVideo.srcObject = stream;
+        arVideo.play().then(function(){
+          console.log('[AR Tiger] Video playing');
+          hideUI();
+          setStatus('SCANNING FOR MARKER...');
+          // Start marker detection
+          startMarkerDetection();
+        }).catch(function(err){
+          console.error('[AR Tiger] Video play failed:', err);
+          showError('Camera Error', 'Could not start video playback: ' + err.message);
+        });
+      } else {
+        // No arjs-video yet — wait for scene to be ready
+        hideUI();
+        setStatus('SCANNING FOR MARKER...');
+        startMarkerDetection();
+      }
+    }).catch(function(err){
+      console.error('[AR Tiger] getUserMedia failed:', err);
+      spinner.style.display = 'none';
+      startBtn.style.display = 'block';
+      loadingHint.innerHTML = 'Camera access denied.<br>Please allow camera and try again.';
+      showError('Camera Access Needed', 
+        'Please allow camera access to use AR. ' +
+        'On iPhone, go to Safari settings and allow camera.');
+    });
+  } else {
+    spinner.style.display = 'none';
+    startBtn.style.display = 'block';
+    loadingHint.innerHTML = 'Camera not supported.<br>Please use a modern browser.';
+    showError('Camera Not Supported', 'Your browser does not support camera access. Please use a modern browser on your phone.');
+  }
+}
+
+function startMarkerDetection(){
+  // Start polling for marker detection
   let initAttempts = 0;
   function waitForCamera(){
     if(initAttempts++ > 90){
-      // Camera failed to start — check if HTTPS
-      const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      let msg = 'Could not start the camera. ';
-      if(!isSecure){
-        msg += 'Camera access requires HTTPS. You are on ' + window.location.protocol;
-      } else {
-        msg += 'Check that you allowed camera permissions. ';
-        msg += 'On iPhone, Safari may block camera on non-HTTPS — try on Android.';
-      }
-      showError('Camera Init Failed', msg);
+      showError('Camera Init Failed', 
+        'Could not start the camera. Please allow camera access and try again.');
       return;
     }
 
-    // AR.js creates a <video> with id="arjs-video" for webcam sourceType
     const arVideo = document.querySelector('#arjs-video');
     if(arVideo && arVideo.readyState >= 2){
       console.log('[AR Tiger] Camera ready (readyState:', arVideo.readyState + ')');
@@ -202,7 +271,6 @@ function waitForLibraries(){
       return;
     }
 
-    // Fallback: check any video element
     const videos = document.querySelectorAll('video');
     for(let v of videos){
       if(v.readyState >= 2 && v !== video){
@@ -237,33 +305,22 @@ function waitForLibraries(){
     console.log('[AR Tiger] cameraStarted event fired');
   });
 
-  // Wait for scene to load
   scene.addEventListener('loaded', () => {
     console.log('[AR Tiger] Scene loaded');
-    showDebug('Scene loaded — starting camera...');
-    loading.classList.remove('hidden');
+    showDebug('Scene loaded');
     setTimeout(waitForCamera, 1000);
   });
 
-  // Handle AR.js errors
   scene.addEventListener('arjsError', (e) => {
     console.error('[AR Tiger] AR.js error:', e.detail);
     showError('AR Error', e.detail || 'An unknown AR.js error occurred.');
   });
-  
-  // Also listen for camera-related errors
-  window.addEventListener('error', (e) => {
-    console.error('[AR Tiger] Global error:', e.message);
-  });
-  
-  console.log('[AR Tiger] Page loaded, protocol:', window.location.protocol, 'hostname:', window.location.hostname);
 }
-setTimeout(waitForLibraries, 50);
 
 function initAR(){
   if(typeof AFRAME === 'undefined') return;
   if(typeof AFRAME.components['hiro-marker'] === 'undefined'){
-    console.warn('[AR Tiger] hiro-marker component not found — AR.js may not have loaded');
+    console.warn('[AR Tiger] hiro-marker component not found');
   } else {
     console.log('[AR Tiger] hiro-marker component registered');
   }
