@@ -159,23 +159,21 @@ $('#btn-watch').onclick = () => {
   v.onended = () => v.remove();
 };
 
-// Wait for DOM to be ready, then check libraries
-document.addEventListener('DOMContentLoaded', function(){
-  // ── Verify libraries loaded ──
+// Wait for libraries to be available (polling for reliability)
+function waitForLibraries(){
   if(typeof AFRAME === 'undefined'){
-    showError('AR Libraries Failed', 
-      'Failed to load AR libraries. Check your internet connection and try again.');
+    // Libraries still loading — retry
+    setTimeout(waitForLibraries, 200);
     return;
   }
   if(typeof AFRAME.components === 'undefined' || typeof AFRAME.components['hiro-marker'] === 'undefined'){
-    showError('AR.js Failed', 
-      'AR.js failed to load. Your network may be blocking CDNs. Try on Wi-Fi.');
+    // AR.js not ready yet — retry
+    setTimeout(waitForLibraries, 200);
     return;
   }
+  // All libraries ready
   console.log('[AR Tiger] A-Frame', AFRAME.version, '| AR.js hiro-marker ready');
-
-  // Wait a tick for AR.js to register its components
-  setTimeout(initAR, 100);
+  initAR();
 
   // ── Camera initialization ──
   let initAttempts = 0;
@@ -243,7 +241,8 @@ document.addEventListener('DOMContentLoaded', function(){
     console.error('[AR Tiger] AR.js error:', e.detail);
     showError('AR Error', e.detail || 'An unknown AR.js error occurred.');
   });
-});
+}
+setTimeout(waitForLibraries, 50);
 
 function initAR(){
   if(typeof AFRAME === 'undefined') return;
