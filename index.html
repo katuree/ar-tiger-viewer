@@ -91,9 +91,11 @@ body{background:#000;color:#fff;font-family:-apple-system,'Segoe UI',Roboto,sans
 
 </a-scene>
 
-<!-- A-Frame FIRST, then AR.js (AR.js extends A-Frame) -->
-<script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-<script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+<!-- Three.js (AR.js dependency) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<!-- A-Frame FIRST (jsDelivr CDN), then AR.js (jsDelivr — more reliable than raw.githack.com) -->
+<script src="https://cdn.jsdelivr.net/npm/aframe@1.2.0/dist/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.5/aframe/build/aframe-ar.js"></script>
 
 <script>
 (function(){
@@ -153,79 +155,94 @@ $('#btn-watch').onclick = () => {
   v.onended = () => v.remove();
 };
 
-// ── Verify libraries loaded ──
-if(typeof AFRAME === 'undefined'){
-  showError('A-Frame Failed', 'Failed to load A-Frame library. Check your network connection.');
-  return;
-}
-console.log('[AR Tiger] A-Frame loaded:', AFRAME.version);
-
-// ── Camera initialization ──
-let initAttempts = 0;
-function waitForCamera(){
-  if(initAttempts++ > 90){
-    showError('Camera Init Failed', 'Could not start the camera. Make sure you are on HTTPS and have camera permissions.');
+// Wait for DOM to be ready, then check libraries
+document.addEventListener('DOMContentLoaded', function(){
+  // ── Verify libraries loaded ──
+  if(typeof AFRAME === 'undefined'){
+    showError('A-Frame Failed', 'Failed to load A-Frame library. Check your network connection.');
     return;
   }
+  console.log('[AR Tiger] A-Frame loaded:', AFRAME.version);
 
-  // AR.js creates a <video> with id="arjs-video" for webcam sourceType
-  const arVideo = document.querySelector('#arjs-video');
-  if(arVideo && arVideo.readyState >= 2){
-    console.log('[AR Tiger] Camera ready (readyState:', arVideo.readyState + ')');
-    hideUI();
-    setStatus('SCANNING FOR MARKER...');
-    hideDebug();
-    return;
-  }
+  // Wait a tick for AR.js to register its components
+  setTimeout(initAR, 100);
 
-  // Fallback: check any video element
-  const videos = document.querySelectorAll('video');
-  for(let v of videos){
-    if(v.readyState >= 2 && v !== video){
-      console.log('[AR Tiger] Camera ready on alternate video element');
+  // ── Camera initialization ──
+  let initAttempts = 0;
+  function waitForCamera(){
+    if(initAttempts++ > 90){
+      showError('Camera Init Failed', 'Could not start the camera. Make sure you are on HTTPS and have camera permissions.');
+      return;
+    }
+
+    // AR.js creates a <video> with id="arjs-video" for webcam sourceType
+    const arVideo = document.querySelector('#arjs-video');
+    if(arVideo && arVideo.readyState >= 2){
+      console.log('[AR Tiger] Camera ready (readyState:', arVideo.readyState + ')');
       hideUI();
       setStatus('SCANNING FOR MARKER...');
       hideDebug();
       return;
     }
+
+    // Fallback: check any video element
+    const videos = document.querySelectorAll('video');
+    for(let v of videos){
+      if(v.readyState >= 2 && v !== video){
+        console.log('[AR Tiger] Camera ready on alternate video element');
+        hideUI();
+        setStatus('SCANNING FOR MARKER...');
+        hideDebug();
+        return;
+      }
+    }
+
+    showDebug('Waiting for camera... (' + initAttempts + ')');
+    setTimeout(waitForCamera, 500);
   }
 
-  showDebug('Waiting for camera... (' + initAttempts + ')');
-  setTimeout(waitForCamera, 500);
+  // AR.js events
+  scene.addEventListener('markerFound', (e) => {
+    if(e.detail.id === 'hiro' || e.detail.marker === 'hiro'){
+      setStatus('VIDEO PLAYING', '#4ade80');
+      hideDebug();
+      console.log('[AR Tiger] Hiro marker found!');
+    }
+  });
+
+  scene.addEventListener('markerLost', () => {
+    setStatus('POINT AT MARKER');
+    showDebug('Marker lost');
+    setTimeout(hideDebug, 2000);
+  });
+
+  scene.addEventListener('cameraStarted', () => {
+    console.log('[AR Tiger] cameraStarted event fired');
+  });
+
+  // Wait for scene to load
+  scene.addEventListener('loaded', () => {
+    console.log('[AR Tiger] Scene loaded');
+    showDebug('Scene loaded — starting camera...');
+    loading.classList.remove('hidden');
+    setTimeout(waitForCamera, 1000);
+  });
+
+  // Handle AR.js errors
+  scene.addEventListener('arjsError', (e) => {
+    console.error('[AR Tiger] AR.js error:', e.detail);
+    showError('AR Error', e.detail || 'An unknown AR.js error occurred.');
+  });
+});
+
+function initAR(){
+  if(typeof AFRAME === 'undefined') return;
+  if(typeof AFRAME.components['hiro-marker'] === 'undefined'){
+    console.warn('[AR Tiger] hiro-marker component not found — AR.js may not have loaded');
+  } else {
+    console.log('[AR Tiger] hiro-marker component registered');
+  }
 }
-
-// AR.js events
-scene.addEventListener('markerFound', (e) => {
-  if(e.detail.id === 'hiro' || e.detail.marker === 'hiro'){
-    setStatus('VIDEO PLAYING', '#4ade80');
-    hideDebug();
-    console.log('[AR Tiger] Hiro marker found!');
-  }
-});
-
-scene.addEventListener('markerLost', () => {
-  setStatus('POINT AT MARKER');
-  showDebug('Marker lost');
-  setTimeout(hideDebug, 2000);
-});
-
-scene.addEventListener('cameraStarted', () => {
-  console.log('[AR Tiger] cameraStarted event fired');
-});
-
-// Wait for scene to load
-scene.addEventListener('loaded', () => {
-  console.log('[AR Tiger] Scene loaded');
-  showDebug('Scene loaded — starting camera...');
-  loading.classList.remove('hidden');
-  setTimeout(waitForCamera, 1000);
-});
-
-// Handle AR.js errors
-scene.addEventListener('arjsError', (e) => {
-  console.error('[AR Tiger] AR.js error:', e.detail);
-  showError('AR Error', e.detail || 'An unknown AR.js error occurred.');
-});
 
 })();
 </script>
