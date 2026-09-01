@@ -179,7 +179,16 @@ function waitForLibraries(){
   let initAttempts = 0;
   function waitForCamera(){
     if(initAttempts++ > 90){
-      showError('Camera Init Failed', 'Could not start the camera. Make sure you are on HTTPS and have camera permissions.');
+      // Camera failed to start — check if HTTPS
+      const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      let msg = 'Could not start the camera. ';
+      if(!isSecure){
+        msg += 'Camera access requires HTTPS. You are on ' + window.location.protocol;
+      } else {
+        msg += 'Check that you allowed camera permissions. ';
+        msg += 'On iPhone, Safari may block camera on non-HTTPS — try on Android.';
+      }
+      showError('Camera Init Failed', msg);
       return;
     }
 
@@ -241,6 +250,13 @@ function waitForLibraries(){
     console.error('[AR Tiger] AR.js error:', e.detail);
     showError('AR Error', e.detail || 'An unknown AR.js error occurred.');
   });
+  
+  // Also listen for camera-related errors
+  window.addEventListener('error', (e) => {
+    console.error('[AR Tiger] Global error:', e.message);
+  });
+  
+  console.log('[AR Tiger] Page loaded, protocol:', window.location.protocol, 'hostname:', window.location.hostname);
 }
 setTimeout(waitForLibraries, 50);
 
